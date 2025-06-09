@@ -6,8 +6,15 @@ const int freq = 25000;      // Fréquence PWM en Hz (25kHz est une bonne valeur
 const int ledChannel = 0;   // Canal LEDC (0-15) - L'ESP32 a plusieurs canaux LEDC
 const int resolution = 8;   // Résolution PWM (8 bits pour 0-255, 10 bits pour 0-1023, etc.)
 
+const int RXD2 = 20; // Exemple de broche RX (GPIO4)
+const int TXD2 = 21; // Exemple de broche TX (GPIO5)
+
+int vitesse = 0;
+int new_vitesse = 0;
+
 void setup() {
-  Serial.begin(9600);
+  // Serial.begin(9600);
+  Serial.begin(9600, SERIAL_8N1, RXD2, TXD2);
   Serial.println("Démarrage du contrôle du ventilateur PWM...");
 
   // Configurer et attacher le canal LEDC au GPIO spécifié
@@ -22,32 +29,40 @@ void setup() {
 }
 
 void loop() {
+  if (Serial.available()) {
+    // Si des données sont disponibles sur Serial1, les lire.
+    // readStringUntil('\n') lit jusqu'à rencontrer un retour chariot ou un timeout.
+    // String strvitesse = Serial.readStringUntil('\n');
+    new_vitesse = Serial.parseInt();
+    if (new_vitesse != 0) vitesse = new_vitesse; 
+  }
   // Exemples de contrôle de vitesse
 
   // Vitesse minimale (arrêt ou très lent selon le ventilateur)
-  Serial.println("Vitesse : Arrêt / Très lent (0)");
-  ledcWriteChannel(ledChannel, 0); // Utilisation de ledcWriteChannel pour définir le cycle de service
-  delay(5000);
+  Serial.print("Vitesse :");
+  Serial.println(vitesse);
+  ledcWriteChannel(ledChannel, vitesse); // Utilisation de ledcWriteChannel pour définir le cycle de service
+  delay(500);
 
   // Vitesse moyenne (environ 50%)
-  Serial.println("Vitesse : Moyenne (127)");
-  ledcWriteChannel(ledChannel, 127); // Cycle de service de 127 (environ 50% pour 8 bits)
-  delay(5000);
+  // Serial.println("Vitesse : Moyenne (127)");
+  // ledcWriteChannel(ledChannel, 127); // Cycle de service de 127 (environ 50% pour 8 bits)
+  // delay(5000);
 
-  // Vitesse maximale (100%)
-  Serial.println("Vitesse : Maximale (255)");
-  ledcWriteChannel(ledChannel, 255); // Cycle de service de 255 (100% pour 8 bits)
-  delay(5000);
+  // // Vitesse maximale (100%)
+  // Serial.println("Vitesse : Maximale (255)");
+  // ledcWriteChannel(ledChannel, 255); // Cycle de service de 255 (100% pour 8 bits)
+  // delay(5000);
 
-  // Cycle de vitesse de 0 à 100% et retour
-  Serial.println("Cycle de vitesse...");
-  for (int dutyCycle = 0; dutyCycle <= 255; dutyCycle++) {
-    ledcWriteChannel(ledChannel, dutyCycle);
-    delay(20); // Ajustez pour un balayage plus ou moins rapide
-  }
-  for (int dutyCycle = 255; dutyCycle >= 0; dutyCycle--) {
-    ledcWriteChannel(ledChannel, dutyCycle);
-    delay(20); // Ajustez pour un balayage plus ou moins rapide
-  }
-  delay(2000);
+  // // Cycle de vitesse de 0 à 100% et retour
+  // Serial.println("Cycle de vitesse...");
+  // for (int dutyCycle = 0; dutyCycle <= 255; dutyCycle++) {
+  //   ledcWriteChannel(ledChannel, dutyCycle);
+  //   delay(20); // Ajustez pour un balayage plus ou moins rapide
+  // }
+  // for (int dutyCycle = 255; dutyCycle >= 0; dutyCycle--) {
+  //   ledcWriteChannel(ledChannel, dutyCycle);
+  //   delay(20); // Ajustez pour un balayage plus ou moins rapide
+  // }
+  // delay(2000);
 }

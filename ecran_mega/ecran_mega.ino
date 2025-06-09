@@ -39,11 +39,12 @@ float value_pm = 0;
 void setup(void)
 {
     uint16_t tmp;
+    Serial1.begin(9600);
+    Serial.begin(115200);
 
     tft.reset();
     ID = tft.readID();
     tft.begin(ID);
-    Serial.begin(9600);
     tft.setRotation(Orientation);
     tft.fillScreen(BLACK);
 
@@ -59,6 +60,13 @@ void setup(void)
 
 void loop()
 {
+    if (Serial1.available()) {
+    // Si des données sont disponibles sur Serial1, les lire.
+    // readStringUntil('\n') lit jusqu'à rencontrer un retour chariot ou un timeout.
+    String messageESP32 = Serial1.readStringUntil('\n');
+    Serial.print("Recu de l'ESP32 via Serial1 : ");
+    Serial.println(messageESP32);
+    }
     uint16_t xpos, ypos;  //screen coordinates
     tp = ts.getPoint();   //tp.x, tp.y are ADC values
 
@@ -73,6 +81,7 @@ void loop()
         if (ypos < BOXSIZE) {               //draw white border on selected color box
             if (xpos < BOXSIZE) {
                 value_speed += 10;
+                if (value_speed >= 255) value_speed = 255;
                 tft.drawRect(0, 0, BOXSIZE, BOXSIZE, YELLOW);
             } else if (xpos < BOXSIZE * 2) {
                 value_speed -= 10;
@@ -84,6 +93,8 @@ void loop()
             }
         }
         displayValue();
+        Serial.println(value_speed);
+        Serial1.println(value_speed);
     }
     tft.drawRect(0, 0, BOXSIZE, BOXSIZE, WHITE);
     tft.drawRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, WHITE);
