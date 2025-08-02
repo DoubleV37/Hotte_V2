@@ -1,6 +1,7 @@
 void decode_recv_msg(String msg) {
   int separatorIndex = msg.indexOf(':');
   if (separatorIndex == -1) {
+    Serial.println(msg);
     Serial.println("Format invalide. Utilise 'nom:valeur'.");
     return;
   }
@@ -21,5 +22,11 @@ void decode_recv_msg(String msg) {
   } else if (key == "temp") {
     value_temp = value;
     update_temp();
+  } else if (key == "tvoc") {
+    value_tvoc = value;
+    update_tvoc();
+  } else if (key == "co2") {
+    value_co2 = value;
+    update_co2();
   }
 }

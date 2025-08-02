@@ -55,17 +55,21 @@ void displayValue() {
   tft.fillRect(BOXSIZE * 2, 180, 180, 20, BLACK);
   tft.setCursor(5, 180);
   tft.setTextColor(WHITE); tft.setTextSize(2);
-  tft.print("PM: ");
+  tft.print("eCO2: ");
   tft.setCursor(BOXSIZE * 2, 180);
-  tft.println(value_pm);
+  tft.println(value_co2);
 }
 
 void update_vitesse() {
-  tft.fillRect(BOXSIZE * 2, BOXSIZE, 180, 20, BLACK);
+  tft.fillRect(BOXSIZE * 2, BOXSIZE, 180, 21, BLACK);
   tft.setTextColor(WHITE); tft.setTextSize(2);
   tft.setCursor(BOXSIZE * 2, 60);
-  tft.print(value_speed);
-  tft.print("%");
+  if (value_speed >= 0) {
+    tft.print(value_speed);
+    tft.print("%");
+  } else {
+    tft.print("AUTO");
+  }
 }
 
 void update_temp() {
@@ -98,9 +102,9 @@ void update_tvoc() {
   tft.println(value_tvoc);
 }
 
-void update_PM() {
+void update_co2() {
   tft.fillRect(BOXSIZE * 2, 180, 180, 20, BLACK);
   tft.setTextColor(WHITE); tft.setTextSize(2);
   tft.setCursor(BOXSIZE * 2, 180);
-  tft.println(value_pm);
+  tft.println(value_co2);
 }

@@ -23,8 +23,8 @@ float value_rpm = 0;
 float value_temp = 0;
 float value_hygro = 0;
 
-float value_tvoc = 0;
-float value_pm = 0;
+uint16_t value_tvoc = 0;
+uint16_t value_co2 = 0;
 
 // Assign human-readable names to some common 16-bit color values:
 #define BLACK   0x0000
@@ -89,14 +89,15 @@ void loop()
                 value_speed -= 10;
                 if (value_speed <= 0) {
                     value_speed = 0;
+                    Serial1.println(-2);
                 } else {
                     Serial1.println(value_speed*255/100);
                 }
                 tft.drawRect(BOXSIZE * 2, 0, BOXSIZE * 2, BOXSIZE, YELLOW);
             } else if (xpos < BOXSIZE * 6) {
-                value_speed = 100;
+                value_speed = -1;
                 tft.drawRect(BOXSIZE * 4, 0, BOXSIZE * 2, BOXSIZE, YELLOW);
-                Serial1.println(value_speed*255/100);
+                Serial1.println(-1);
             }
         }
         update_vitesse();

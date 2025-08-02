@@ -1,3 +1,8 @@
+#include <DHT.h>
+#include <DHT_U.h>
+#include <Adafruit_SGP30.h>
+#include <Wire.h>
+
 // Définir le GPIO de sortie PWM pour le contrôle du ventilateur
 const int fanPWMPin = 5; // Utilisez un GPIO disponible sur votre ESP32-C3U, par exemple GPIO5
 const int fanTachPin = 4; // GPIO pour la broche tachymétrique (RPM) du ventilateur
@@ -18,11 +23,31 @@ const int freq = 25000;      // Fréquence PWM en Hz (25kHz est une bonne valeur
 const int ledChannel = 0;   // Canal LEDC (0-15) - L'ESP32 a plusieurs canaux LEDC
 const int resolution = 8;   // Résolution PWM (8 bits pour 0-255, 10 bits pour 0-1023, etc.)
 
-const int RXD2 = 20; // Exemple de broche RX (GPIO4)
-const int TXD2 = 21; // Exemple de broche TX (GPIO5)
+// --- Paramètres du capteur DHT22 ---
+const int DHTPIN = 6;      // Broche GPIO à laquelle le capteur DHT22 est connecté
+#define DHTTYPE DHT22      // Spécifier le type de capteur : DHT11, DHT21, DHT22
+DHT dht(DHTPIN, DHTTYPE);
+float hygro = 0;
+float temp = 0;
+
+// --- Variables pour la lecture DHT ---
+unsigned long lastDHTReadTime = 0;
+const unsigned long dhtReadInterval = 5000;
+
+// --- Paramètres COM Serie entre Arduibo Mega et Esp32
+const int RXD2 = 20;
+const int TXD2 = 21;
 
 int vitesse = 0;
 int new_vitesse = 0;
+float rpm = 0;
+
+//SGP30
+const int I2C_SDA_PIN = 8;
+const int I2C_SCL_PIN = 10;
+uint16_t tvoc = 0;
+uint16_t co2 = 0;
+Adafruit_SGP30 sgp;
 
 void IRAM_ATTR detectPulse() {
   unsigned long currentTime = micros();
@@ -40,7 +65,6 @@ void setup() {
 
   // Configurer et attacher le canal LEDC au GPIO spécifié
   // Utilisation de ledcAttachChannel() qui regroupe la configuration et l'attachement
-  // Note: ledcAttachChannel retourne un bool, donc on peut vérifier si l'opération a réussi
   if (!ledcAttachChannel(fanPWMPin, freq, resolution, ledChannel)) {
     Serial.println("Erreur: Impossible d'attacher le pin au canal LEDC.");
     while(1); // Arrêter l'exécution si l'attachement échoue
@@ -49,16 +73,33 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(fanTachPin), detectPulse, FALLING);
 
   Serial.println("LED Channel configuré et attaché au pin.");
+  ledcWriteChannel(ledChannel, vitesse);
+
+  dht.begin();
+  Serial.println("DHT init");
+
+  Wire.setPins(I2C_SDA_PIN, I2C_SCL_PIN);
+  Wire.begin();
+  if (!sgp.begin()) {
+    Serial.println("Erreur: Capteur SGP30 non trouvé ou initialisation échouée. Vérifiez le câblage I2C !");
+    while (1); // Bloquer l'exécution si le capteur n'est pas trouvé
+  }
+  Serial.println("Capteur SGP30 initialisé.");
 }
 
 void loop() {
   if (Serial.available()) {
     new_vitesse = Serial.parseInt();
-    if (new_vitesse != 0) vitesse = new_vitesse;
   }
-
-  Serial.print("vitesse:");
-  Serial.println(vitesse);
+  if (new_vitesse > 0 ) {
+    vitesse = new_vitesse;
+  } else {
+    if (new_vitesse == -1) {
+      autoVitesse();
+    } else if (new_vitesse == -2) {
+      vitesse = 0;
+    }
+  }
   ledcWriteChannel(ledChannel, vitesse); // Utilisation de ledcWriteChannel pour définir le cycle de service
   
   // --- Lecture et affichage du RPM ---
@@ -77,9 +118,7 @@ void loop() {
       // RPM = (microsecondes par minute) / (impulsions par tour * microsecondes par impulsion)
       // microsecondes par minute = 60 secondes/minute * 1 000 000 microsecondes/seconde = 60 000 000
       // RPM = (60,000,000 / currentPulseInterval) / pulsesPerRevolution
-      float rpm = (60000000.0 / currentPulseInterval) / pulsesPerRevolution;
-      Serial.print("RPM:");
-      Serial.println(rpm);
+      rpm = (6000000.0 / currentPulseInterval) / pulsesPerRevolution;
     }
   }
 
@@ -87,14 +126,101 @@ void loop() {
   // Si aucune impulsion n'est détectée pendant un certain temps (ex: 2 secondes), assumez RPM = 0
   if (micros() - lastPulseTime > 2000000 && lastPulseTime != 0) { // 2 secondes sans impulsion
     if (pulseInterval != 0) { // Éviter de réafficher 0 RPM si déjà affiché
-      Serial.println("RPM:0");
+      rpm = 0;
       pulseInterval = 0; // Réinitialiser pour ne pas réafficher continuellement
     }
   } else if (vitesse == 0 && lastPulseTime != 0 && pulseInterval != 0) {
       // Si la vitesse PWM est à 0 et qu'on avait des impulsions, mais plus maintenant
       if (micros() - lastPulseTime > 1000000) { // Attendre 1 seconde après la dernière impulsion
-         Serial.println("RPM:0");
+         rpm = 0;
          pulseInterval = 0;
       }
   }
+  readDHT22();
+  readTVOC();
+  sendCOM();
+}
+
+// --- Fonction utilitaire pour calculer l'humidité absolue (requise par SGP30.setHumidity) ---
+// input: temperature [°C], relative humidity [%RH]
+// output: absolute humidity [mg/m^3]
+uint32_t getAbsoluteHumidity(float temperature, float relative_humidity) {
+  // Convertir l'humidité relative en fraction (ex: 50% -> 0.5)
+  const float rh_fraction = relative_humidity / 100.0f;
+  // Calculer la pression de vapeur saturante (en hPa)
+  const float svp = 6.112f * exp((17.62f * temperature) / (243.12f + temperature));
+  // Calculer la densité de vapeur d'eau (en g/m^3)
+  const float vapor_density_gm3 = rh_fraction * svp * (18.015f / 8.314472f) / (273.15f + temperature);
+  // Convertir en mg/m^3 (et arrondir à l'entier le plus proche)
+  return (uint32_t)(vapor_density_gm3 * 1000.0f);
+}
+
+void readTVOC() {
+  if (!sgp.IAQmeasure()) {
+    Serial.println("Erreur de lecture du SGP30!");
+    tvoc = 0; // Ou une valeur d'erreur spécifique
+    co2 = 0;
+  } else {
+    tvoc = sgp.TVOC;
+    co2 = sgp.eCO2;
+  }
+
+  // Fournir la compensation de l'humidité au SGP30 si le DHT a une bonne lecture
+  // C'est important pour la précision des mesures du SGP30.
+  if (!isnan(temp) && !isnan(hygro)) {
+    uint32_t absolute_humidity = getAbsoluteHumidity(temp, hygro);
+    sgp.setHumidity(absolute_humidity);
+  }
+
+  // Sauvegarder les baselines (optionnel, mais recommandé pour la précision à long terme)
+  // Les baselines aident le capteur à s'adapter à l'environnement.
+  // Idéalement, elles devraient être stockées dans la mémoire non volatile (NVRAM/EEPROM)
+  // et rechargées au démarrage. Ici, on se contente de les re-calculer.
+  // if (millis() - lastBaselineSave >= baselineSaveInterval) {
+  //   lastBaselineSave = millis();
+  //   Serial.print("Baseline TVOC: 0x"); Serial.print(sgp.getTVOC_baseline(), HEX);
+  //   Serial.print(" eCO2: 0x"); Serial.println(sgp.geteCO2_baseline(), HEX);
+  //   // Ici, vous devriez sauvegarder ces valeurs dans l'EEPROM de l'ESP32 pour les réutiliser au prochain démarrage.
+  // }
+}
+
+void sendCOM() {
+  Serial.print("RPM:");
+  Serial.println(rpm);
+  delay(100);
+  Serial.print("temp:");
+  Serial.println(temp);
+  delay(100);
+  Serial.print("hygro:");
+  Serial.println(hygro);
+  delay(100);
+  Serial.print("tvoc:");
+  Serial.println(tvoc);
+  delay(100);
+  Serial.print("co2:");
+  Serial.println(co2);
+  delay(100);
+}
+
+void readDHT22() {
+  // --- Lecture et affichage du DHT22 ---
+  if (millis() - lastDHTReadTime >= dhtReadInterval) {
+    lastDHTReadTime = millis();
+
+    // Lire la température en Celsius
+    float h = dht.readHumidity();
+    float t = dht.readTemperature(); // Par défaut en Celsius
+
+    // Vérifier si la lecture a échoué
+    if (isnan(h) || isnan(t)) {
+      Serial.println("Erreur de lecture du capteur DHT22 !");
+    } else {
+      hygro = h;
+      temp = t;
+    }
+  }
+}
+
+void autoVitesse() {
+  vitesse = 50;
 }
