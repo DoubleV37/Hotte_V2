@@ -6,6 +6,7 @@
 // Définir le GPIO de sortie PWM pour le contrôle du ventilateur
 const int fanPWMPin = 5; // Utilisez un GPIO disponible sur votre ESP32-C3U, par exemple GPIO5
 const int fanTachPin = 4; // GPIO pour la broche tachymétrique (RPM) du ventilateur
+const int relaiFan = 3;
 
 volatile unsigned long lastPulseTime = 0; // Temps de la dernière impulsion en micros
 volatile unsigned long pulseInterval = 0; // Intervalle entre les deux dernières impulsions en micros
@@ -69,6 +70,8 @@ void setup() {
     Serial.println("Erreur: Impossible d'attacher le pin au canal LEDC.");
     while(1); // Arrêter l'exécution si l'attachement échoue
   }
+  pinMode(relaiFan, OUTPUT);
+  digitalWrite(relaiFan, LOW);
   pinMode(fanTachPin, INPUT_PULLUP); // Activer la résistance de PULLUP interne
   attachInterrupt(digitalPinToInterrupt(fanTachPin), detectPulse, FALLING);
 
@@ -92,12 +95,16 @@ void loop() {
     new_vitesse = Serial.parseInt();
   }
   if (new_vitesse > 0 ) {
+    if (vitesse == 0)
+      digitalWrite(relaiFan, HIGH);
     vitesse = new_vitesse;
   } else {
     if (new_vitesse == -1) {
+      digitalWrite(relaiFan, HIGH);
       autoVitesse();
     } else if (new_vitesse == -2) {
       vitesse = 0;
+      digitalWrite(relaiFan, LOW);
     }
   }
   ledcWriteChannel(ledChannel, vitesse); // Utilisation de ledcWriteChannel pour définir le cycle de service
@@ -222,5 +229,15 @@ void readDHT22() {
 }
 
 void autoVitesse() {
-  vitesse = 50;
+  if (co2 > 800 || tvoc > 150) {
+    vitesse += 20;
+  } else if (co2 < 500 || tvoc < 50) {
+    vitesse -= 20;
+  } else {
+    vitesse = 150;
+  }
+  if (vitesse > 255)
+    vitesse = 255;
+  else if (vitesse < 10) 
+    vitesse = 10;
 }
