@@ -45,7 +45,7 @@ float rpm = 0;
 
 //SGP30
 const int I2C_SDA_PIN = 8;
-const int I2C_SCL_PIN = 10;
+const int I2C_SCL_PIN = 7;
 uint16_t tvoc = 0;
 uint16_t co2 = 0;
 Adafruit_SGP30 sgp;
